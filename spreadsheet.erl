@@ -14,7 +14,8 @@
     set/6,
     info/1,
     add_row/2,
-    del_row/3
+    del_row/3,
+    leggi/2
 ]).
 
 % Dichiarazione record
@@ -125,6 +126,25 @@ populate_format_table(TabName, K, N, M) ->
     end  
 .
 
+leggi(SpreadSheet, Node) ->
+    MioPid = global:whereis_name(Node),
+    % Costruzione query per recuperare righe tabella policy
+    PolicyQuery = qlc:q(
+        [ X#policy.rule ||
+            X <- mnesia:table(policy),
+            X#policy.pid == MioPid,
+            X#policy.sheet == SpreadSheet
+        ]
+    ),
+    % Si esegue la query
+    Fun = fun() -> qlc:e(PolicyQuery) end,
+    Result = mnesia:transaction(Fun),
+    io:format("Result: ~p\n", [Result]),
+    case Result of
+        {aborted, Reason} -> {error, Reason};
+        {atomic, Res} -> {Res}
+    end.
+
 % Definizione funzione get(SpreadSheet, TableIndex, I, J)
 get(SpreadSheet, TableIndex, I, J) ->
     MioPid = self(),
@@ -139,9 +159,11 @@ get(SpreadSheet, TableIndex, I, J) ->
     % Si esegue la query
     Fun = fun() -> qlc:e(PolicyQuery) end,
     Result = mnesia:transaction(Fun),
+    io:format("Result: ~p", [Result]),
     case Result of
         {aborted, Reason} -> {error, Reason};
         {atomic, Res} ->
+            io:format("Value: ~p", [Res]),
             case Res of
                 [] -> {error, not_allowed};
                 [Policy] ->
