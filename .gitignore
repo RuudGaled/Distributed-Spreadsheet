@@ -19,3 +19,5 @@ _checkouts/
 # Ignora tutte le cartelle che contengono "Mnesia" nel nome
 **/*Mnesia*/
 
+# Igora i file .csv
+*.csv
