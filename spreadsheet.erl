@@ -18,7 +18,7 @@
 ]).
 
 % Dichiarazione record
--record(spreadsheet, {table, rows, columns}).            % record che rappresenta un foglio di calcolo
+-record(spreadsheet, {table, rows, columns}).           % record che rappresenta un foglio di calcolo
 -record(owner, {sheet, pid}).                           % record che rappresenta owner del foglio 
 -record(policy, {pid, sheet, rule}).                    % record che rappresenta le policy
 -record(format, {sheet, tab_index, nrow, ncolumns}).    % record che rappresenta il formato dei fogli (BAG)

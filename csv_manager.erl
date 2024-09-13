@@ -24,6 +24,8 @@
 % Dichiarazione record  
 -record(state, {table}).                        % record che rappresenta la tabella
 -record(spreadsheet, {table, rows, columns}).   % record che rappresenta un foglio di calcolo
+-record(owner, {sheet, pid}).                   % record che rappresenta owner del foglio 
+-record(policy, {pid, sheet, rule}).            % record che rappresenta le policy
 
 %%% API
 
@@ -40,7 +42,8 @@ to_csv(TableName, FileName, Timeout) ->
     gen_server:call(?MODULE, {to_csv_timeout, TableName, FileName, Timeout}, Timeout).
 
 from_csv(FilePath) ->
-    gen_server:call(?MODULE, {from_csv, FilePath}).
+    Pid = self(),
+    gen_server:call(?MODULE, {from_csv, FilePath, Pid}).
 
 from_csv(FilePath, Timeout) ->
     gen_server:call(?MODULE, {from_csv_timeout, FilePath, Timeout}, Timeout).
@@ -58,12 +61,12 @@ handle_call({to_csv_timeout, TableName, FileName, Timeout}, _From, State) ->
     Reply = to_csv_impl(TableName, FileName, Timeout),
     {reply, Reply, State};
 
-handle_call({from_csv, FilePath}, _From, State) ->
-    Reply = from_csv_impl(FilePath),
+handle_call({from_csv, FilePath, Pid}, _From, State) ->
+    Reply = from_csv_impl(FilePath, Pid),
     {reply, Reply, State};
 
 handle_call({from_csv_timeout, FilePath, Timeout}, _From, State) ->
-    Reply = from_csv_impl(FilePath, Timeout),
+    Reply = from_csv_timeout(FilePath, Timeout),
     {reply, Reply, State};
 
 handle_call(stop, _From, State) ->
@@ -119,11 +122,26 @@ remove_extension(FileName) ->
     Final
 .
 
+% Definizione funzione ausiliare get_global_name(Pid)
+get_global_name(Pid) ->
+    % Process = self(),
+    io:format("Pid dentro get_global_name(): ~p\n", [Pid]),
+    io:format("global:registered_names(): ~p\n", [global:registered_names()]),
+    
+    case lists:filter(
+           fun(Name) -> global:whereis_name(Name) == Pid end,
+           global:registered_names()) of
+        [GlobalName] -> {GlobalName};
+        [] -> {error, not_found}
+    end
+.
+
 % Definizione funzione from_csv_impl(FilePath)
-from_csv_impl(FilePath) ->
+from_csv_impl(FilePath, Pid) ->
     SpreadsheetFields = record_info(fields, spreadsheet),
     TableName = remove_extension(FilePath),
     TabelleLocali = mnesia:system_info(tables),
+    Process = element(1, (get_global_name(Pid))),
     case lists:member(list_to_atom(TableName),TabelleLocali) of
         true -> {error, table_is_already_in_mnesia};
         false ->
@@ -136,6 +154,23 @@ from_csv_impl(FilePath) ->
             ]),
             {ok, File} = file:open(FilePath, [read]),
             read_lines(File),
+            
+            % aggiorno la tabella owner
+            F = fun()->
+                Data = #owner{sheet=list_to_atom(TableName), 
+                              pid = global:whereis_name(Process)},
+                mnesia:write(Data)
+            end,
+            {atomic, ok} = mnesia:transaction(F),
+
+            % aggiorno le policy
+            F1 = fun() ->
+                Data = #policy{pid= global:whereis_name(Process), 
+                               sheet=list_to_atom(TableName), rule=write},
+                mnesia:write(Data)
+            end,
+            {atomic, ok} = mnesia:transaction(F1),
+
             file:close(File)
     end
 .
@@ -210,7 +245,7 @@ to_csv_impl(TableName, FileName, Timeout) ->
 .
 
 % Definizione funzione from_csv_impl(FilePath, Timeout)
-from_csv_impl(FilePath, Timeout) ->
+from_csv_timeout(FilePath, Timeout) ->
     myflush(),
     MioPid = self(),
     % Si crea un processo timer
