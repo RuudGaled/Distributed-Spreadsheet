@@ -46,7 +46,7 @@ from_csv(FilePath) ->
     gen_server:call(?MODULE, {from_csv, FilePath, Pid}).
 
 from_csv(FilePath, Timeout) ->
-    gen_server:call(?MODULE, {from_csv_timeout, FilePath, Timeout}, Timeout).
+    gen_server:call(?MODULE, {from_csv_timeout, FilePath, Timeout}, infinity).
 
 %%% gen_server callbacks
 
@@ -58,7 +58,7 @@ handle_call({to_csv, TableName, FileName}, _From, State) ->
     {reply, Reply, State};
 
 handle_call({to_csv_timeout, TableName, FileName, Timeout}, _From, State) ->
-    Reply = to_csv_impl(TableName, FileName, Timeout),
+    Reply = to_csv_timeout(TableName, FileName, Timeout),
     {reply, Reply, State};
 
 handle_call({from_csv, FilePath, Pid}, _From, State) ->
@@ -214,31 +214,27 @@ process_line(Line) ->
 
 % Funzioni con parametro TIMEOUT
 % Definizione to_csv_impl(TableName, FileName, Timeout)
-to_csv_impl(TableName, FileName, Timeout) ->
+to_csv_timeout(TableName, FileName, Timeout) ->
     myflush(),
     MioPid = self(),
-    % Si crea un processo timer
-    spawn(fun() ->
-        receive after Timeout -> MioPid!{timeout} end
-    end),
-    % Si crea un processo getter
-    spawn(fun() ->
-        MioPid!{result, to_csv(TableName, FileName)}
-    end),
+    Csv_created = to_csv_impl(TableName, FileName),
+    case Csv_created of
+        error -> error;
+        _ ->  
+            % Creazione prcesso timer che elimina il file .csv 
+            spawn(fun() ->
+                timer:sleep(Timeout),
+                Result = file:delete(FileName),
+                case Result of 
+                    {aborted, Reason} -> {error, Reason};
+                    ok -> MioPid!{timeout}
+                end
+            end)
+    end,
     ToReturn = receive
-        {result, Res} -> Res;
-        {timeout} ->
-            % Si aspetta la scrittura del file per evitare race condition
-            receive
-                {result, _} -> ok
-            end,
-            % Si ritorna allo stato precedente (si elimina il file)
-            Result = file:delete(FileName),
-            case Result of
-                {error, Reason} -> {error, Reason};
-                ok -> timeout
-            end
-    after 10000 -> {error, no_message_received}
+        {timeout} -> 
+            io:format("Timeout raggiunto, file .csv eliminato.\n"),
+            timeout
     end,
     myflush(),
     ToReturn
