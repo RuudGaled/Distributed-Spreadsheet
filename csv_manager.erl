@@ -65,8 +65,8 @@ handle_call({from_csv, FilePath, Pid}, _From, State) ->
     Reply = from_csv_impl(FilePath, Pid),
     {reply, Reply, State};
 
-handle_call({from_csv_timeout, FilePath, Timeout}, _From, State) ->
-    Reply = from_csv_timeout(FilePath, Timeout),
+handle_call({from_csv_timeout, FilePath, Pid, Timeout}, _From, State) ->
+    Reply = from_csv_timeout(FilePath, Pid, Timeout),
     {reply, Reply, State};
 
 handle_call(stop, _From, State) ->
@@ -124,10 +124,6 @@ remove_extension(FileName) ->
 
 % Definizione funzione ausiliare get_global_name(Pid)
 get_global_name(Pid) ->
-    % Process = self(),
-    io:format("Pid dentro get_global_name(): ~p\n", [Pid]),
-    io:format("global:registered_names(): ~p\n", [global:registered_names()]),
-    
     case lists:filter(
            fun(Name) -> global:whereis_name(Name) == Pid end,
            global:registered_names()) of
@@ -175,7 +171,6 @@ from_csv_impl(FilePath, Pid) ->
     end
 .
 
-
 % Definizione funzione ausiliare read_lines(File)
 read_lines(File) ->
     case io:get_line(File, "") of
@@ -216,7 +211,7 @@ process_line(Line) ->
 % Definizione to_csv_impl(TableName, FileName, Timeout)
 to_csv_timeout(TableName, FileName, Timeout) ->
     myflush(),
-    MioPid = self(),
+    MyPid = self(),
     Csv_created = to_csv_impl(TableName, FileName),
     case Csv_created of
         error -> error;
@@ -227,7 +222,7 @@ to_csv_timeout(TableName, FileName, Timeout) ->
                 Result = file:delete(FileName),
                 case Result of 
                     {aborted, Reason} -> {error, Reason};
-                    ok -> MioPid!{timeout}
+                    ok -> MyPid!{timeout}
                 end
             end)
     end,
@@ -240,33 +235,29 @@ to_csv_timeout(TableName, FileName, Timeout) ->
     ToReturn
 .
 
-% Definizione funzione from_csv_impl(FilePath, Timeout)
-from_csv_timeout(FilePath, Timeout) ->
+% Definizione funzione from_csv_impl(FilePath, Pid, Timeout)
+from_csv_timeout(FilePath, Pid, Timeout) ->
     myflush(),
-    MioPid = self(),
-    % Si crea un processo timer
-    spawn(fun() ->
-        receive after Timeout -> MioPid!{timeout} end
-    end),
-    % Si crea un processo getter
-    spawn(fun() ->
-        MioPid!{result, from_csv(FilePath)}
-    end),
+    MyPid = self(),
+    Csv_loaded = from_csv_impl(FilePath, Pid),
+    case Csv_loaded of
+        error -> error;
+        _ -> 
+            spawn(fun() -> 
+                % Creo processo timer che elimina la tabella
+                timer:sleep(Timeout),
+                TableName = remove_extension(FilePath),
+                Result = mnesia:delete_table(list_to_atom(TableName)),
+                case Result of
+                    {aborted, Reason} -> {error, Reason};
+                    {atomic, ok} -> MyPid!{timeout}
+                end
+            end)
+        end,
     ToReturn = receive
-        {result, Res} -> Res;
         {timeout} -> 
-            % Si aspetta il caricamento del file per evitare race condition
-            receive
-                {result, _} -> ok
-            end,
-            % Si ritorna allo stato precedente (si elimina la tabella)
-            TableName = remove_extension(FilePath),
-            Result = mnesia:delete_table(list_to_atom(TableName)),
-            case Result of
-                {aborted, Reason} -> {error, Reason};
-                {atomic, ok} -> timeout
-            end
-    after 10000 -> {error, no_message_received}
+            io:format("Timeout raggiunto, tabella eliminata.\n"),
+            timeout
     end,
     myflush(),
     ToReturn

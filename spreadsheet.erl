@@ -127,12 +127,12 @@ populate_format_table(TabName, K, N, M) ->
 
 % Definizione funzione get(SpreadSheet, TableIndex, I, J)
 get(SpreadSheet, TableIndex, I, J) ->
-    MioPid = self(),
+    MyPid = self(),
     % Costruzione query per recuperare righe tabella policy
     PolicyQuery = qlc:q(
         [ X#policy.rule ||
             X <- mnesia:table(policy),
-            X#policy.pid == MioPid,
+            X#policy.pid == MyPid,
             X#policy.sheet == SpreadSheet
         ]
     ),
@@ -180,12 +180,12 @@ get_value(SpreadSheet, TableIndex, I, J) ->
 % Funzione get con parametro TIMEOUT
 % Definizione funzione get(SpreadSheet, TableIndex, I, J, Timeout)
 get(SpreadSheet, TableIndex, I, J, Timeout) ->
-    MioPid = self(),
+    MyPid = self(),
     % Costruzione query per recuperare righe tabella policy
     PolicyQuery = qlc:q(
         [ X#policy.rule ||
             X <- mnesia:table(policy),
-            X#policy.pid == MioPid,
+            X#policy.pid == MyPid,
             X#policy.sheet == SpreadSheet
         ]
     ),
@@ -212,11 +212,11 @@ get(SpreadSheet, TableIndex, I, J, Timeout) ->
 % Definizione funzione ausiliare get_timeout(SpreadSheet, TableIndex, I, J, Timeout)
 get_timeout(SpreadSheet, TableIndex, I, J, Timeout) ->
     myflush(),
-    MioPid = self(),
+    MyPid = self(),
     % Creazione processo timer
     spawn(fun() ->
         timer:sleep(Timeout),
-        MioPid!{timeout, get_value(SpreadSheet, TableIndex, I, J)}
+        MyPid!{timeout, get_value(SpreadSheet, TableIndex, I, J)}
     end),
     ToReturn = receive
         {timeout, Res} -> Res
@@ -238,12 +238,12 @@ myflush() ->
 
 % Definizione funzione set(SpreadSheet, TableIndex, I, J, Value)
 set(SpreadSheet, TableIndex, I, J, Value) ->
-    MioPid = self(),
+    MyPid = self(),
     % Costruzione query per recuperare righe tabella policy
     PolicyQuery = qlc:q(
         [ X#policy.rule ||
             X <- mnesia:table(policy),
-            X#policy.pid == MioPid,
+            X#policy.pid == MyPid,
             X#policy.sheet == SpreadSheet
         ]
     ),
@@ -302,12 +302,12 @@ set_value(SpreadSheet, TableIndex, I, J, Value) ->
 % Funzione set con parametro TIMEOUT
 % Definizione funzione aset(SpreadSheet, TableIndex, I, J, Value, Timeout)
 set(SpreadSheet, TableIndex, I, J, Value, Timeout) ->
-    MioPid = self(),
+    MyPid = self(),
      % Costruzione query per recuperare righe tabella policy
     PolicyQuery = qlc:q(
         [ X#policy.rule ||
             X <- mnesia:table(policy),
-            X#policy.pid == MioPid,
+            X#policy.pid == MyPid,
             X#policy.sheet == SpreadSheet
         ]
     ),
