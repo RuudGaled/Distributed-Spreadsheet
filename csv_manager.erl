@@ -39,14 +39,15 @@ to_csv(TableName, FileName) ->
     gen_server:call(?MODULE, {to_csv, TableName, FileName}).
 
 to_csv(TableName, FileName, Timeout) ->
-    gen_server:call(?MODULE, {to_csv_timeout, TableName, FileName, Timeout}, Timeout).
+    gen_server:call(?MODULE, {to_csv_timeout, TableName, FileName, Timeout}, infinity).
 
 from_csv(FilePath) ->
     Pid = self(),
     gen_server:call(?MODULE, {from_csv, FilePath, Pid}).
 
 from_csv(FilePath, Timeout) ->
-    gen_server:call(?MODULE, {from_csv_timeout, FilePath, Timeout}, infinity).
+    Pid = self(),
+    gen_server:call(?MODULE, {from_csv_timeout, FilePath, Pid, Timeout}, infinity).
 
 %%% gen_server callbacks
 
