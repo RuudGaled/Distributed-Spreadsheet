@@ -213,18 +213,13 @@ get(SpreadSheet, TableIndex, I, J, Timeout) ->
 get_timeout(SpreadSheet, TableIndex, I, J, Timeout) ->
     myflush(),
     MioPid = self(),
-    % Si crea un processo timer
+    % Creazione processo timer
     spawn(fun() ->
-        receive after Timeout -> MioPid!{timeout} end
-    end),
-    % Si crea un processo getter
-    spawn(fun() ->
-        MioPid!{result, get_value(SpreadSheet, TableIndex, I, J)}
+        timer:sleep(Timeout),
+        MioPid!{timeout, get_value(SpreadSheet, TableIndex, I, J)}
     end),
     ToReturn = receive
-        {result, Res} -> Res;
-        {timeout} -> timeout
-    after 10000 -> {error, no_message_received}
+        {timeout, Res} -> Res
     end,
     myflush(),
     ToReturn
@@ -340,35 +335,23 @@ set_timeout(SpreadSheet, TableIndex, I, J, Value, Timeout) ->
     ValueToRestore = get_value(SpreadSheet, TableIndex, I, J),
     ToReturn = case ValueToRestore of
         {error, Reason1} -> {error, Reason1};
-        _ -> 
-            MioPid = self(),
-            % Si crea un processo timer
-            spawn(fun() ->
-                receive after Timeout -> MioPid!{timeout} end
-            end),
-            % Si crea un processo setter
-            spawn(fun() ->
-                MioPid!{result, set_value(SpreadSheet, TableIndex, I, J, Value)}
-            end),
-            receive
-                {result, Res} -> Res;
-                {timeout} ->
-                    % Si aspetta il setter per evitare race condition
-                    receive
-                        {result, _} -> ok
-                    end,
-                    % Si ritorna al valore precedente
-                    Result = set_value(SpreadSheet, TableIndex, I, J, ValueToRestore),
-                    case Result of
-                        {error, Reason} -> {error, Reason};
-                        ok -> timeout
-                    end
-            after 10000 -> {error, no_message_received}
+        _ ->
+            TempValue = set_value(SpreadSheet, TableIndex, I, J, Value),
+            case TempValue of
+                ok ->
+                    % Creazione processo timer che ripristina il valore originale
+                    spawn(fun() -> 
+                        timer:sleep(Timeout),
+                        set_value(SpreadSheet, TableIndex, I, J, ValueToRestore),
+                        io:format("Timeout raggiunto, valore precedente ripristinato.\n")
+                    end),
+                    ok;
+                Error -> Error
             end
-    end,
+        end,
     myflush(),
     ToReturn
-.
+.    
 
 % Definizione funzione share(Sheet, AccessPolicies)
 share(Sheet, AccessPolicies) ->
